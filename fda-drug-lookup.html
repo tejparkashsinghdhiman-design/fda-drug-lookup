@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>FDA Drug Lookup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one narrow column. Search on top, then one card per FDA application; details open in place. */
+:root {
+  --bg: #EEF1EF;
+  --surface: #FFFFFF;
+  --ink: #15201C;
+  --muted: #55645E;
+  --line: #D3DAD6;
+  --accent: #0B6B5E;
+  --accent-ink: #FFFFFF;
+  --tint-bg: #DDEEEA;
+  --tint-ink: #0A5A4F;
+  --warn-bg: #FBEFD3;
+  --warn-ink: #6B4A00;
+  --crit-bg: #FBE3E3;
+  --crit-ink: #8A1C1C;
+  --crit-line: #E3A9A9;
+  --off-bg: #E4E8E6;
+  --off-ink: #4A5853;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0E1412;
+    --surface: #151D1A;
+    --ink: #E4ECE8;
+    --muted: #97A8A1;
+    --line: #2B3833;
+    --accent: #4FD1B5;
+    --accent-ink: #06201A;
+    --tint-bg: #1B3A33;
+    --tint-ink: #9FE6D3;
+    --warn-bg: #3A2E10;
+    --warn-ink: #F0D488;
+    --crit-bg: #3B1A1A;
+    --crit-ink: #F4B4B4;
+    --crit-line: #6B3030;
+    --off-bg: #25302C;
+    --off-ink: #9DAEA7;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--font-body);
+  padding-block: max(20px, env(safe-area-inset-top, 0px)) max(40px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 44rem; margin-inline: auto; display: grid; gap: 16px; min-width: 0; }
+h1 { margin: 0; font-size: 1.5rem; line-height: 1.15; letter-spacing: -0.015em; font-weight: 700; text-wrap: balance; }
+.sub { margin: 6px 0 0; color: var(--muted); font-size: 0.9375rem; max-width: 60ch; }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+form { display: flex; gap: 8px; }
+input[type="search"] {
+  flex: 1; min-width: 0; height: 48px; padding: 0 14px;
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+input[type="search"]::placeholder { color: var(--muted); opacity: 0.85; }
+.btn {
+  height: 48px; padding: 0 18px; border: 0; border-radius: 10px;
+  background: var(--accent); color: var(--accent-ink);
+  font: 600 1rem var(--font-body); cursor: pointer;
+}
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn.ghost { height: 44px; background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chips .lbl { font: 500 0.75rem var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.chip {
+  min-height: 36px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font: 500 0.875rem var(--font-body); cursor: pointer;
+}
+
+.status { margin: 0; min-height: 1.3em; font-size: 0.875rem; color: var(--muted); }
+.status.err {
+  color: var(--crit-ink); background: var(--crit-bg); border: 1px solid var(--crit-line);
+  border-radius: 10px; padding: 10px 12px;
+}
+
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.list > li { min-width: 0; }
+.app { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.app > summary {
+  list-style: none; cursor: pointer; position: relative;
+  padding: 14px 44px 14px 16px; display: grid; gap: 4px;
+}
+.app > summary::-webkit-details-marker { display: none; }
+.app > summary::after {
+  content: ""; position: absolute; right: 18px; top: 20px; width: 8px; height: 8px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg); transition: transform 0.15s;
+}
+.app[open] > summary::after { transform: rotate(-135deg); top: 24px; }
+.brand { font-weight: 700; font-size: 1.0625rem; line-height: 1.25; overflow-wrap: anywhere; }
+.ingr {
+  color: var(--muted); font-size: 0.9rem;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.meta { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 4px; }
+.appno { font: 500 0.8125rem var(--font-mono); }
+.date, .sponsor { font-size: 0.8125rem; color: var(--muted); }
+.pill { font: 600 0.75rem/1 var(--font-body); padding: 5px 8px; border-radius: 6px; white-space: nowrap; }
+.pill.type { border: 1px solid var(--line); color: var(--ink); }
+.pill.ok { background: var(--tint-bg); color: var(--tint-ink); }
+.pill.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.pill.off { background: var(--off-bg); color: var(--off-ink); }
+
+.body { border-top: 1px solid var(--line); padding: 14px 16px 16px; display: grid; gap: 16px; }
+dl.facts { margin: 0; display: grid; grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr); gap: 8px 12px; font-size: 0.9rem; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; overflow-wrap: anywhere; }
+h3.sec { margin: 0 0 6px; font: 600 0.75rem var(--font-body); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.prods { list-style: none; margin: 0; padding: 0; }
+.prods li { padding: 8px 0; border-top: 1px solid var(--line); display: grid; gap: 2px; font-size: 0.9rem; }
+.prods li:first-child { border-top: 0; padding-top: 0; }
+.prods .l1 { overflow-wrap: anywhere; }
+.prods .l2 { color: var(--muted); font-size: 0.8125rem; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.label { display: grid; gap: 12px; }
+.blk h4 { margin: 0; font: 600 0.8125rem var(--font-body); }
+.blk p { margin: 4px 0 0; font-size: 0.9rem; max-width: 65ch; }
+.blk.crit { background: var(--crit-bg); color: var(--crit-ink); border: 1px solid var(--crit-line); border-radius: 8px; padding: 10px 12px; }
+.note { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+.more { justify-self: center; }
+footer { display: grid; gap: 4px; font-size: 0.8125rem; color: var(--muted); max-width: 60ch; }
+footer p { margin: 0; }
+
+/* One shrinkable column per grid, so a long unbroken name wraps instead of widening the page. */
+.wrap, .list, .app > summary, .body, .label, .prods li, footer { grid-template-columns: minmax(0, 1fr); }
+
+@media (prefers-reduced-motion: reduce) { .app > summary::after { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>FDA Drug Lookup</h1>
+    <p class="sub">Search every application the FDA has approved, including discontinued ones. Type a brand or generic name.</p>
+  </header>
+
+  <form id="f" role="search" autocomplete="off">
+    <input id="q" type="search" name="q" placeholder="e.g. metformin, Ozempic" aria-label="Drug name" maxlength="80" enterkeyhint="search" autocapitalize="none" spellcheck="false">
+    <button class="btn" id="go" type="submit">Search</button>
+  </form>
+  <div class="chips" id="chips"></div>
+
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+  <noscript><p class="status err">This page needs JavaScript to search.</p></noscript>
+  <ol class="list" id="results"></ol>
+  <button class="btn ghost more" id="more" type="button" hidden>Load more</button>
+
+  <footer>
+    <p>Data from <a href="https://open.fda.gov/apis/drug/drugsfda/" target="_blank" rel="noopener">openFDA</a> (U.S. FDA)<span id="updated"></span>. openFDA says its data is unvalidated and must not be used for medical decisions.</p>
+    <p>This tool shows approvals and label excerpts. It does not show doses.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var API = "https://api.fda.gov/drug/";
+  var PAGE = 20;
+  var EXAMPLES = ["metformin", "Ozempic", "atorvastatin", "ibuprofen"];
+  var RECENT_KEY = "fdalookup.recent";
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var TYPES = {
+    NDA: { word: "New drug", text: "NDA. A full application for a new drug, usually the original brand." },
+    ANDA: { word: "Generic", text: "ANDA. A shorter application for a generic copy of an approved drug." },
+    BLA: { word: "Biologic", text: "BLA. A license for a biologic such as an antibody or vaccine." }
+  };
+  var SUB_TYPES = { ORIG: "Original", SUPPL: "Supplement" };
+  var LOWER_WORDS = { and: 1, of: 1, in: 1, with: 1, for: 1, the: 1, to: 1, or: 1 };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { term: "", skip: 0, total: 0, shown: 0, busy: false };
+
+  /* ---------- small helpers ---------- */
+  function h(tag, props) {
+    var n = document.createElement(tag);
+    var k;
+    if (props) {
+      for (k in props) {
+        if (!Object.prototype.hasOwnProperty.call(props, k)) continue;
+        var v = props[k];
+        if (v == null || v === false) continue;
+        if (k === "class") n.className = v;
+        else if (k === "text") n.textContent = v;
+        else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), v);
+        else n.setAttribute(k, v === true ? "" : v);
+      }
+    }
+    for (var i = 2; i < arguments.length; i++) add(n, arguments[i]);
+    return n;
+  }
+  function add(n, kid) {
+    if (kid == null || kid === false) return;
+    if (Array.isArray(kid)) { kid.forEach(function (x) { add(n, x); }); return; }
+    n.append(kid);
+  }
+  function fill(box, kids) { box.replaceChildren(); add(box, kids); }
+  function uniq(a) { return a.filter(function (x, i) { return x && a.indexOf(x) === i; }); }
+
+  function fmtDate(s) {
+    var m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(s || "");
+    if (!m) return "";
+    var mon = MONTHS[+m[2] - 1];
+    return mon ? (+m[3]) + " " + mon + " " + m[1] : "";
+  }
+  /* The API returns names in capitals. Make them readable; keep short codes like XR, ER, INC. */
+  function nice(s) {
+    return String(s || "").replace(/\S+/g, function (w) {
+      if (w.length <= 3 && w === w.toUpperCase() && /[A-Z]/.test(w) && !LOWER_WORDS[w.toLowerCase()]) return w;
+      return w.toLowerCase().replace(/(^|[^a-z])([a-z])/g, function (m, a, b) {
+        return LOWER_WORDS[w.toLowerCase()] ? m : a + b.toUpperCase();
+      });
+    });
+  }
+  function cap(s) { s = String(s || "").toLowerCase(); return s.charAt(0).toUpperCase() + s.slice(1); }
+  function quote(s) { return '"' + encodeURIComponent(String(s).replace(/["\\]/g, " ").trim()) + '"'; }
+
+  /* ---------- API ---------- */
+  function api(path, params) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 20000);
+    return fetch(API + path + ".json?" + params, { signal: ctrl.signal })
+      .then(function (res) {
+        if (res.status === 404) return { results: [], meta: { results: { total: 0 } } };
+        if (res.status === 429) { var e = new Error("rate"); e.kind = "rate"; throw e; }
+        if (!res.ok) { var e2 = new Error("http"); e2.kind = "http"; e2.code = res.status; throw e2; }
+        return res.json();
+      })
+      .then(function (data) { clearTimeout(timer); return data; },
+            function (err) { clearTimeout(timer); throw err; });
+  }
+  function errorText(err) {
+    if (err && err.kind === "rate") return "The FDA API is limiting requests from this connection. Wait a minute and try again.";
+    if (err && err.kind === "http") return "The FDA API returned an error (" + err.code + "). Try again in a moment.";
+    return "Can't reach the FDA API. Check your connection. If this file is open inside a preview or another app, open it in Chrome instead.";
+  }
+
+  /* ---------- recent searches ---------- */
+  function getRecent() {
+    try {
+      var v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+      return Array.isArray(v) ? v.filter(function (x) { return typeof x === "string"; }).slice(0, 5) : [];
+    } catch (e) { return []; }
+  }
+  function remember(t) {
+    try {
+      var r = [t].concat(getRecent().filter(function (x) { return x.toLowerCase() !== t.toLowerCase(); })).slice(0, 5);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(r));
+    } catch (e) { /* storage unavailable: recents just won't persist */ }
+  }
+  function renderChips() {
+    var box = $("chips");
+    var recent = getRecent();
+    var names = uniq(recent.concat(EXAMPLES).filter(function (x, i, a) {
+      return a.findIndex(function (y) { return y.toLowerCase() === x.toLowerCase(); }) === i;
+    })).slice(0, 6);
+    box.replaceChildren(h("span", { class: "lbl", text: recent.length ? "Recent" : "Try" }));
+    names.forEach(function (n) {
+      box.append(h("button", { class: "chip", type: "button", text: n, onclick: function () { $("q").value = n; search(n); } }));
+    });
+  }
+
+  /* ---------- turning an API record into display values ---------- */
+  function derive(app) {
+    var products = app.products || [];
+    var subs = app.submissions || [];
+    var brands = uniq(products.map(function (p) { return p.brand_name; }));
+    var ingr = uniq([].concat.apply([], products.map(function (p) {
+      return (p.active_ingredients || []).map(function (i) { return i.name; });
+    })));
+    var statuses = uniq(products.map(function (p) { return p.marketing_status; })).map(function (s) {
+      var low = s.toLowerCase();
+      if (low.indexOf("discontinued") > -1) return { text: "Discontinued", cls: "off" };
+      if (low.indexOf("tentative") > -1) return { text: "Tentative approval", cls: "warn" };
+      return { text: s, cls: "ok" };
+    });
+    var origDates = subs.filter(function (s) { return s.submission_type === "ORIG" && s.submission_status === "AP" && s.submission_status_date; })
+      .map(function (s) { return s.submission_status_date; }).sort();
+    var dated = subs.filter(function (s) { return s.submission_status_date; })
+      .sort(function (a, b) { return b.submission_status_date.localeCompare(a.submission_status_date); });
+    var prefix = (/^(NDA|ANDA|BLA)/.exec(app.application_number || "") || [])[1];
+    var title = brands.length ? nice(brands[0]) + (brands.length > 1 ? " +" + (brands.length - 1) + " more" : "") : (ingr.length ? nice(ingr[0]) : "Unnamed product");
+    return {
+      title: title,
+      ingr: ingr.map(nice).join(" + "),
+      statuses: statuses,
+      orig: origDates[0] || "",
+      latest: dated[0] || null,
+      type: prefix ? TYPES[prefix] : null,
+      rank: prefix === "ANDA" ? 1 : (prefix ? 0 : 2),
+      products: products.slice().sort(function (a, b) { return String(a.product_number).localeCompare(String(b.product_number)); }),
+      subCount: subs.length
+    };
+  }
+
+  /* ---------- rendering ---------- */
+  function productRow(p) {
+    var ing = (p.active_ingredients || []).map(function (i) { return [i.strength, nice(i.name)].filter(Boolean).join(" "); }).join(" + ");
+    var s = p.marketing_status ? derive({ products: [p] }).statuses[0] : null;
+    var how = [cap(p.dosage_form), cap(p.route)].filter(Boolean).join(" · ");
+    return h("li", null,
+      h("span", { class: "l1", text: ing || nice(p.brand_name) }),
+      h("span", { class: "l2" }, how ? h("span", { text: how }) : null, s ? h("span", { class: "pill " + s.cls, text: s.text }) : null));
+  }
+
+  function card(app) {
+    var d = derive(app);
+    var labelBox = h("div", { class: "label" });
+    var labelBtn = h("button", { class: "btn ghost", type: "button", text: "Show label excerpt" });
+    labelBtn.addEventListener("click", function () { loadLabel(app, labelBox, labelBtn); });
+
+    var facts = [
+      ["Sponsor", app.sponsor_name ? nice(app.sponsor_name) : "Not listed"],
+      ["Application", d.type ? d.type.text : (app.application_number || "Not listed")],
+      ["First approved", d.orig ? fmtDate(d.orig) : "Not listed"],
+      ["Latest filing", d.latest ? [fmtDate(d.latest.submission_status_date), [SUB_TYPES[d.latest.submission_type] || d.latest.submission_type, d.latest.submission_class_code_description].filter(Boolean).join(", ")].filter(Boolean).join(" · ") : "Not listed"],
+      ["Filings on record", String(d.subCount)]
+    ];
+    var shownProducts = d.products.slice(0, 40);
+
+    return h("li", null,
+      h("details", { class: "app" },
+        h("summary", null,
+          h("span", { class: "brand", text: d.title }),
+          d.ingr ? h("span", { class: "ingr", text: d.ingr }) : null,
+          h("span", { class: "meta" },
+            h("span", { class: "appno", text: app.application_number || "No number" }),
+            d.type ? h("span", { class: "pill type", text: d.type.word }) : null,
+            d.statuses.map(function (s) { return h("span", { class: "pill " + s.cls, text: s.text }); }),
+            d.orig ? h("span", { class: "date", text: "Approved " + fmtDate(d.orig) }) : null),
+          app.sponsor_name ? h("span", { class: "sponsor", text: nice(app.sponsor_name) }) : null),
+        h("div", { class: "body" },
+          h("dl", { class: "facts" }, facts.map(function (f) { return [h("dt", { text: f[0] }), h("dd", { text: f[1] })]; })),
+          h("div", null,
+            h("h3", { class: "sec", text: "Products (" + d.products.length + ")" }),
+            h("ul", { class: "prods" }, shownProducts.map(productRow)),
+            d.products.length > shownProducts.length ? h("p", { class: "note", text: "+" + (d.products.length - shownProducts.length) + " more products not shown" }) : null),
+          h("div", null, labelBtn, labelBox))));
+  }
+
+  function setStatus(text, isErr) {
+    var s = $("status");
+    s.textContent = text;
+    s.className = "status" + (isErr ? " err" : "");
+  }
+  function updateMore() {
+    var btn = $("more");
+    var left = state.total - state.shown;
+    btn.hidden = !(left > 0);
+    if (left > 0) btn.textContent = "Load " + Math.min(PAGE, left) + " more";
+  }
+
+  /* ---------- search ---------- */
+  function search(raw, more) {
+    var term = more ? state.term : String(raw || "").trim().slice(0, 80);
+    if (!term || state.busy) return;
+    state.busy = true;
+    $("go").disabled = true;
+    $("more").disabled = true;
+    if (!more) {
+      state.term = term; state.skip = 0; state.total = 0; state.shown = 0;
+      $("results").replaceChildren();
+      $("more").hidden = true;
+    }
+    setStatus("Searching the FDA database…");
+    var params = "search=products.brand_name:" + quote(term) + "+products.active_ingredients.name:" + quote(term) +
+      "&limit=" + PAGE + "&skip=" + state.skip;
+    return api("drugsfda", params).then(function (data) {
+      var items = (data.results || []).slice().sort(function (a, b) { return derive(a).rank - derive(b).rank; });
+      state.total = (data.meta && data.meta.results && data.meta.results.total) || 0;
+      state.skip += (data.results || []).length;
+      state.shown += items.length;
+      $("results").append.apply($("results"), items.map(card));
+      if (data.meta && data.meta.last_updated) $("updated").textContent = ", last updated " + fmtDate(data.meta.last_updated);
+      if (!state.shown) setStatus("No FDA application matches \u201C" + term + "\u201D. Try the generic name or check the spelling.");
+      else setStatus("Showing " + state.shown + " of " + state.total.toLocaleString("en-US") + " applications for \u201C" + term + "\u201D. Tap one to open it.");
+      if (!more) { remember(term); renderChips(); }
+    }).catch(function (err) {
+      setStatus(errorText(err), true);
+    }).then(function () {
+      state.busy = false;
+      $("go").disabled = false;
+      $("more").disabled = false;
+      updateMore();
+    });
+  }
+
+  /* ---------- label excerpt (loaded on tap) ---------- */
+  function clean(v, heading) {
+    var t = [].concat(v || []).join(" ").replace(/\s+/g, " ").trim();
+    t = t.replace(new RegExp("^(\\d+(\\.\\d+)?\\s+)?" + heading + "[:\\s]*", "i"), "");
+    if (t.length > 600) {
+      t = t.slice(0, 600);
+      t = t.slice(0, Math.max(t.lastIndexOf(" "), 400)) + "\u2026";
+    }
+    return t;
+  }
+  function renderLabel(box, res, byName) {
+    var sections = [
+      ["Boxed warning", "boxed_warning", "BOXED WARNING|WARNING", "crit"],
+      ["Indications and usage", "indications_and_usage", "INDICATIONS (?:AND|&) USAGE", ""],
+      ["Contraindications", "contraindications", "CONTRAINDICATIONS", ""]
+    ];
+    var of = res.openfda || {};
+    var who = [(of.brand_name || [])[0], (of.manufacturer_name || [])[0]].filter(Boolean).map(nice).join(" · ");
+    var setId = res.set_id || (of.spl_set_id || [])[0] || "";
+    var blocks = sections.map(function (s) {
+      var text = clean(res[s[1]], s[2]);
+      return text ? h("div", { class: "blk " + s[3] }, h("h4", { text: s[0] }), h("p", { text: text })) : null;
+    }).filter(Boolean);
+    fill(box, [
+      who ? h("p", { class: "note", text: "Label: " + who }) : null,
+      byName ? h("p", { class: "note", text: "Matched by name, so this label may come from a different manufacturer." }) : null,
+      blocks.length ? blocks : h("p", { class: "note", text: "This label has none of these sections in openFDA." }),
+      /^[0-9a-f-]{36}$/i.test(setId)
+        ? h("p", { class: "note" }, h("a", { href: "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=" + setId, target: "_blank", rel: "noopener", text: "Read the full label on DailyMed" }))
+        : null
+    ]);
+  }
+  function loadLabel(app, box, btn) {
+    btn.disabled = true;
+    fill(box, h("p", { class: "note", text: "Loading label…" }));
+    var brand = ((app.products || [])[0] || {}).brand_name;
+    var byName = false;
+    api("label", "search=openfda.application_number:" + quote(app.application_number || "") + "&limit=1")
+      .then(function (data) {
+        if (data.results && data.results.length) return data;
+        if (!brand) return data;
+        byName = true;
+        return api("label", "search=openfda.brand_name:" + quote(brand) + "&limit=1");
+      })
+      .then(function (data) {
+        if (!data.results || !data.results.length) {
+          fill(box, h("p", { class: "note", text: "openFDA has no label text for this application. It may be old, withdrawn, or not in the label dataset." }));
+          btn.hidden = true;
+          return;
+        }
+        renderLabel(box, data.results[0], byName);
+        btn.hidden = true;
+      })
+      .catch(function (err) {
+        fill(box, h("p", { class: "note", text: errorText(err) }));
+        btn.disabled = false;
+      });
+  }
+
+  /* ---------- start ---------- */
+  $("f").addEventListener("submit", function (e) { e.preventDefault(); search($("q").value); $("q").blur(); });
+  $("more").addEventListener("click", function () { search(null, true); });
+  renderChips();
+  var first = getRecent()[0] || "metformin";
+  $("q").value = first;
+  search(first);
+})();
+</script>
+</body>
+</html>
